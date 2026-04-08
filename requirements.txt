@@ -1,0 +1,6 @@
+# Airflow 3.0.6 constraints
+--constraint "/usr/local/airflow/dags/constraints.txt"
+
+# Required providers for Asset Watchers with SQS
+apache-airflow-providers-amazon==9.22.0
+apache-airflow-providers-common-messaging==2.0.0

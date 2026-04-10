@@ -610,6 +610,8 @@ In the consumer MWAA environment (Account B), configure an Asset Watcher to moni
 
 **Important:** Asset Watchers in Airflow 3.0.6 are defined alongside the Asset itself. Create a DAG file that defines both the asset and its watcher:
 
+>[!IMPORTANT] Replace the queue_url variable in the publish_to_sqs task with your actual SQS queue URL. The placeholder 'https://sqs.<REGION>.amazonaws.com/<CONSUMER_ACCOUNT_ID>/mwaa-asset-events' must be updated with your AWS region, consumer account ID, and queue name before deploying.
+
 ```python
 # consumer_dag_sqs.py (Airflow 3.0.6)
 from airflow.decorators import dag, task

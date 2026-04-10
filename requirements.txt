@@ -4,3 +4,11 @@
 # Required providers for Asset Watchers with SQS
 apache-airflow-providers-amazon==9.22.0
 apache-airflow-providers-common-messaging==2.0.0
+
+# Dependencies removed from constraints to avoid version conflicts with amazon provider 9.22.0
+apache-airflow-providers-common-compat>=1.13.0
+apache-airflow-providers-common-sql>=1.32.0
+apache-airflow-providers-http>=5.3.3
+boto3>=1.41.0
+botocore>=1.41.0
+aiobotocore>=3.1.2

@@ -35,6 +35,7 @@ This guide demonstrates cross-MWAA orchestration using Event-Driven Asset Watche
 - No direct network connectivity required between environments
 
 
+
 ## Architecture Overview
 
 The event-driven approach represents maximum decoupling and scalability:
@@ -102,6 +103,8 @@ The event-driven approach represents maximum decoupling and scalability:
 - IAM roles configured for cross-account SQS access
 - Permissions to create and configure SQS queues
 
+
+
 ## Implementation
 
 ### Step 1: Set Up the MWAA Environments
@@ -111,16 +114,19 @@ Before configuring cross-environment orchestration, you need MWAA environments i
 **1a. Create the S3 bucket for DAGs and requirements:**
 
 ```bash
+# Set your bucket name
+MWAA_BUCKET="<YOUR_MWAA_BUCKET>"
+
 # Create the S3 bucket (must be in the same region as your MWAA environment)
-aws s3 mb s3://<YOUR_MWAA_BUCKET> --region ap-southeast-2
+aws s3 mb s3://$MWAA_BUCKET --region ap-southeast-2
 
 # Enable versioning (required by MWAA)
 aws s3api put-bucket-versioning \
-    --bucket <YOUR_MWAA_BUCKET> \
+    --bucket $MWAA_BUCKET \
     --versioning-configuration Status=Enabled
 
 # Create the dags folder
-aws s3api put-object --bucket <YOUR_MWAA_BUCKET> --key dags/
+aws s3api put-object --bucket $MWAA_BUCKET --key dags/
 ```
 
 **1b. Create the MWAA execution role:**
@@ -150,9 +156,17 @@ Save the following trust policy to a file called `trust-policy.json`:
 Create the IAM role:
 
 ```bash
+MWAA_EXECUTION_ROLE="<MWAA_EXECUTION_ROLE>"
+
 aws iam create-role \
-    --role-name <MWAA_EXECUTION_ROLE> \
+    --role-name $MWAA_EXECUTION_ROLE \
     --assume-role-policy-document file://trust-policy.json
+
+# Capture the role ARN for use in Step 1e
+MWAA_EXECUTION_ROLE_ARN=$(aws iam get-role \
+    --role-name $MWAA_EXECUTION_ROLE \
+    --query "Role.Arn" \
+    --output text)
 ```
 
 Attach the base permissions policy that grants access to your MWAA S3 bucket and CloudWatch Logs. This policy is the same for both producer and consumer environments.
@@ -250,7 +264,7 @@ Save the following to `mwaa-base-policy.json`:
 
 ```bash
 aws iam put-role-policy \
-    --role-name <MWAA_EXECUTION_ROLE> \
+    --role-name $MWAA_EXECUTION_ROLE \
     --policy-name MWAA-Base-Policy \
     --policy-document file://mwaa-base-policy.json
 ```
@@ -309,13 +323,23 @@ aws cloudformation wait stack-create-complete \
     --region ap-southeast-2
 ```
 
-Retrieve the subnet IDs from the stack outputs — you will need these for Step 1e:
+Retrieve the subnet IDs from the stack outputs and capture them into variables for Step 1e:
 
 ```bash
-aws cloudformation describe-stacks \
+SUBNET_1=$(aws cloudformation describe-stacks \
     --stack-name MWAAEnvironment \
     --region ap-southeast-2 \
-    --query "Stacks[0].Outputs"
+    --query "Stacks[0].Outputs[?OutputKey=='PrivateSubnet1'].OutputValue" \
+    --output text)
+
+SUBNET_2=$(aws cloudformation describe-stacks \
+    --stack-name MWAAEnvironment \
+    --region ap-southeast-2 \
+    --query "Stacks[0].Outputs[?OutputKey=='PrivateSubnet2'].OutputValue" \
+    --output text)
+
+echo "Subnet 1: $SUBNET_1"
+echo "Subnet 2: $SUBNET_2"
 ```
 
 > **Note:** The CloudFormation template creates a security group with no ingress rules (`no-ingress-sg`), which does not meet MWAA's requirement for a **self-referencing inbound rule**. The following step creates a properly configured security group.
@@ -346,7 +370,7 @@ aws ec2 authorize-security-group-ingress \
 echo "Security Group ID: $SG_ID"
 ```
 
-Use this `$SG_ID` (not the `NoIngressSecurityGroup` from the stack outputs) in Step 1e.
+Use this `$SG_ID` (not the `NoIngressSecurityGroup` from the stack outputs) when creating the MWAA environment in Step 1e.
 
 **1d. Configure Python requirements and constraints:**
 
@@ -357,7 +381,7 @@ First, prepare a constraints file based on the [Airflow 3.0.6 constraints](https
 Upload the constraints file to the `dags/` folder:
 
 ```bash
-aws s3 cp constraints.txt s3://<YOUR_MWAA_BUCKET>/dags/constraints.txt
+aws s3 cp constraints.txt s3://$MWAA_BUCKET/dags/constraints.txt
 ```
 
 Create an `.airflowignore` file so Airflow doesn't try to parse the constraints file as a DAG:
@@ -367,7 +391,7 @@ constraints\.txt
 ```
 
 ```bash
-aws s3 cp .airflowignore s3://<YOUR_MWAA_BUCKET>/dags/.airflowignore
+aws s3 cp .airflowignore s3://$MWAA_BUCKET/dags/.airflowignore
 ```
 
 The `requirements.txt` references the local constraints file and specifies the required provider packages:
@@ -379,6 +403,13 @@ The `requirements.txt` references the local constraints file and specifies the r
 # Required providers for Asset Watchers with SQS
 apache-airflow-providers-amazon==9.22.0
 apache-airflow-providers-common-messaging==2.0.0
+
+# Dependencies removed from constraints to avoid version conflicts with amazon provider 9.22.0
+apache-airflow-providers-common-compat>=1.13.0
+apache-airflow-providers-common-sql>=1.32.0
+apache-airflow-providers-http>=5.3.3
+boto3>=1.41.0
+botocore>=1.41.0
 ```
 
 > **Note:** The constraints file is placed in the `dags/` folder because MWAA syncs this folder to `/usr/local/airflow/dags/` on the worker nodes. The `.airflowignore` prevents the DAG processor from scanning it. Provider versions pinned above are removed from the constraints or upgraded to ensure compatibility with Airflow 3.0.6's Asset Watcher feature.
@@ -386,27 +417,29 @@ apache-airflow-providers-common-messaging==2.0.0
 Upload the requirements file:
 
 ```bash
-aws s3 cp requirements.txt s3://<YOUR_MWAA_BUCKET>/requirements.txt
+aws s3 cp requirements.txt s3://$MWAA_BUCKET/requirements.txt
 ```
 
 **1e. Create the MWAA environment:**
 
-With the S3 bucket, IAM role, VPC networking, and requirements all in place, create the environment:
+With the S3 bucket, IAM role, VPC networking, and requirements all in place, create the environment using the variables captured in the previous steps:
 
 ```bash
+ENVIRONMENT_NAME="<ENVIRONMENT_NAME>"
+
 aws mwaa create-environment \
-    --name <ENVIRONMENT_NAME> \
+    --name $ENVIRONMENT_NAME \
     --airflow-version "3.0.6" \
-    --source-bucket-arn "arn:aws:s3:::<YOUR_MWAA_BUCKET>" \
+    --source-bucket-arn "arn:aws:s3:::$MWAA_BUCKET" \
     --dag-s3-path "dags/" \
     --requirements-s3-path "requirements.txt" \
-    --execution-role-arn "arn:aws:iam::<ACCOUNT_ID>:role/<MWAA_EXECUTION_ROLE>" \
+    --execution-role-arn "$MWAA_EXECUTION_ROLE_ARN" \
     --environment-class "mw1.small" \
     --max-workers 10 \
     --min-workers 1 \
     --schedulers 2 \
     --webserver-access-mode "PUBLIC_ONLY" \
-    --network-configuration "SubnetIds=<SUBNET_1>,<SUBNET_2>,SecurityGroupIds=<SECURITY_GROUP>" \
+    --network-configuration "SubnetIds=$SUBNET_1,$SUBNET_2,SecurityGroupIds=$SG_ID" \
     --logging-configuration '{
         "DagProcessingLogs": {"Enabled": true, "LogLevel": "INFO"},
         "SchedulerLogs": {"Enabled": true, "LogLevel": "INFO"},
@@ -420,7 +453,7 @@ aws mwaa create-environment \
 
 > **Note:** The environment takes approximately 20–30 minutes to reach `AVAILABLE` status. You can monitor progress with:
 > ```bash
-> aws mwaa get-environment --name <ENVIRONMENT_NAME> --region ap-southeast-2 \
+> aws mwaa get-environment --name $ENVIRONMENT_NAME --region ap-southeast-2 \
 >     --query "Environment.Status"
 > ```
 
@@ -495,6 +528,9 @@ aws sqs set-queue-attributes \
 ### Step 3: Create the Producer DAG with SQS Publishing
 
 In the producer MWAA environment (Account A), create a DAG that publishes asset events to SQS:
+
+> [!IMPORTANT]
+> Replace the `queue_url` variable in the `publish_to_sqs` task with your actual SQS queue URL. The placeholder `'https://sqs.<REGION>.amazonaws.com/<CONSUMER_ACCOUNT_ID>/mwaa-asset-events'` must be updated with your AWS region, consumer account ID, and queue name before deploying.
 
 ```python
 # producer_dag_sqs.py (Airflow 3.0.6)
@@ -810,10 +846,6 @@ This pattern scales naturally to support multiple consumers reacting to the same
 
 ---
 
-## Security
+## **About the Authors**
 
-See [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more information.
-
-## License
-
-This library is licensed under the MIT-0 License. See the LICENSE file.
+[Author bios would go here]

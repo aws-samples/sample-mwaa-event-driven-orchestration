@@ -30,26 +30,31 @@ def producer_dag_sqs():
         return processed_data
     
     @task
-    def publish_to_sqs(processed_data, logical_date, dag, run_id):
+    def publish_to_sqs(processed_data, **kwargs):
         """Publish message to SQS queue"""
         try:
             sqs_hook = SqsHook(aws_conn_id='aws_default')
             queue_url = 'https://sqs.<REGION>.amazonaws.com/<CONSUMER_ACCOUNT_ID>/mwaa-asset-events'
-            
+
+            # Access context variables via kwargs in Airflow 3.x
+            logical_date = kwargs.get("logical_date")
+            dag = kwargs.get("dag")
+            run_id = kwargs.get("run_id")
+
             # Create message payload
             message = {
-                "timestamp": logical_date.isoformat(),
-                "dag_id": dag.dag_id,
-                "run_id": run_id,
+                "timestamp": logical_date.isoformat() if logical_date else datetime.now().isoformat(),
+                "dag_id": dag.dag_id if dag else "producer_dag_sqs",
+                "run_id": run_id or "unknown",
                 "data": processed_data
             }
-            
+
             # Send message to SQS
             response = sqs_hook.send_message(
                 queue_url=queue_url,
                 message_body=json.dumps(message),
                 message_attributes={
-                    'dag_id': {'StringValue': dag.dag_id, 'DataType': 'String'}
+                    'dag_id': {'StringValue': message["dag_id"], 'DataType': 'String'}
                 }
             )
             

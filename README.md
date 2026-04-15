@@ -16,6 +16,8 @@ Apache Airflow 3.0.6 introduces several key changes relevant to cross-MWAA orche
 
 These features enable workflows to react to real-world events from systems outside Airflow, eliminating polling overhead and reducing orchestration latency from minutes to seconds.
 
+To accelerate adoption, we also provide a **Claude Code agentic skill** — an AI-powered tool that generates production-ready producer and consumer DAG files through a conversational interface. Rather than manually adapting code templates and navigating the nuances of Asset Watcher configuration, SQS message structures, and provider version requirements, engineers can describe their pipeline in natural language and receive correctly structured, deployment-ready DAGs in seconds. The skill encodes the best practices, gotchas, and patterns from this post directly into its code generation logic, reducing the gap between learning the architecture and deploying it.
+
 
 ## **Solution Overview**
 
@@ -33,6 +35,9 @@ This guide demonstrates cross-MWAA orchestration using Event-Driven Asset Watche
 - Integrates with external systems beyond Airflow
 - Enterprise-grade reliability with SQS message durability
 - No direct network connectivity required between environments
+- Accelerated implementation via the included agentic skill that generates correctly structured DAGs from natural language and automates deployment
+
+A **Claude Code agentic skill** accompanies this solution, enabling engineers to generate customized producer and consumer DAGs through natural language conversation. The skill handles two modes: generating sample DAGs for quick validation of the cross-account setup, or producing custom DAGs tailored to specific business logic (e.g., "producer runs a Glue job, consumer triggers dbt"). It can also auto-deploy the generated DAGs — discovering MWAA environments, uploading files to S3, validating requirements and VPC networking, and verifying triggerer health — all with user confirmation at each step.
 
 
 
@@ -106,6 +111,41 @@ The event-driven approach represents maximum decoupling and scalability:
 
 
 ## Implementation
+
+### **Agentic Skill for DAG Generation and Deployment**
+
+The repository also includes an agentic skill (`agent-skill/`) that automates the DAG creation and deployment workflow. The skill follows the universal [SKILL.md](https://github.com/anthropics/skills) format — a portable, structured guide that encodes domain knowledge for AI agents. This means it works across AI coding assistants and agent frameworks, not just a single tool.
+
+**What the skill does:** When you tell your AI coding assistant something like *"Write cross-account MWAA DAGs for my orders pipeline"*, the skill guides the agent through the complete workflow — collecting your SQS queue URL, generating correctly structured producer and consumer DAG files, and optionally deploying them to your MWAA environments. The skill does not require you to provide AWS account IDs or MWAA environment names upfront. Instead, it auto-discovers your environments by running `aws mwaa list-environments` and `aws sts get-caller-identity` using your locally configured AWS CLI credentials, then asks you to confirm which environment is the producer and which is the consumer.
+
+The skill works in two modes:
+- **Sample mode** — generates the reference producer and consumer DAGs for quick cross-account validation, requiring only the SQS queue URL as input
+- **Custom mode** — adapts the DAG templates to your specific business logic (e.g., *"the producer runs a Glue ETL job and the consumer triggers a dbt model refresh"*), customizing DAG IDs, task names, schedules, and processing logic while preserving the correct Asset Watcher patterns
+
+Beyond code generation, the skill includes an auto-deploy flow that discovers existing MWAA environments, runs pre-flight checks (VPC networking, provider versions, triggerer health, SQS queue accessibility), uploads DAGs to the correct S3 buckets, and verifies end-to-end readiness. Each step that modifies infrastructure requires explicit user confirmation.
+
+#### Installing the Skill Across AI Coding Tools
+
+The skill uses the universal `SKILL.md` format, which is supported by a growing ecosystem of AI coding assistants and agent frameworks. Copy or symlink the `agent-skill/` directory to the appropriate location for your tool:
+
+| Tool | Skill Location | Install Command |
+|------|---------------|-----------------|
+| [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview) | `.claude/skills/` | `cp -r agent-skill .claude/skills/mwaa-cross-account/` |
+| [Kiro CLI](https://kiro.dev/) | `.kiro/skills/` | `cp -r agent-skill .kiro/skills/mwaa-cross-account/` |
+| [Amazon Q CLI](https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line.html) | `.amazonq/skills/` | `cp -r agent-skill .amazonq/skills/mwaa-cross-account/` |
+| [CLI Agent Orchestrator](https://github.com/awslabs/cli-agent-orchestrator) | Managed via CLI | `cao skills add ./agent-skill` |
+| [Strands Agents SDK](https://strandsagents.com/docs/user-guide/concepts/plugins/skills/) | Via SDK plugin loader | Follow Strands skill plugin docs |
+| Other tools (Codex, Gemini CLI, Cursor, GitHub Copilot, etc.) | Varies | Check your tool's docs for skill/prompt loading conventions |
+
+When using the [CLI Agent Orchestrator (CAO)](https://github.com/awslabs/cli-agent-orchestrator), skills are delivered to each provider automatically — Kiro CLI receives them as native `skill://` resources, while Claude Code, Codex, Gemini CLI, and others receive them via runtime prompt injection. See the [CAO skills documentation](https://github.com/awslabs/cli-agent-orchestrator?tab=readme-ov-file#skills) for details on managed skill delivery across providers.
+
+Then ask your AI coding assistant:
+
+```
+> Write cross-account MWAA DAGs for my orders processing pipeline
+```
+
+The assistant will follow the skill's step-by-step guide, collect your SQS queue URL, generate the DAG files, and walk you through deployment.
 
 ### Step 1: Set Up the MWAA Environments
 

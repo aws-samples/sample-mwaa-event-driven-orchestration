@@ -132,12 +132,9 @@ The skill uses the universal `SKILL.md` format, which is supported by a growing 
 |------|---------------|-----------------|
 | [Claude Code](https://docs.anthropic.com/en/docs/claude-code/overview) | `.claude/skills/` | `cp -r agent-skill .claude/skills/mwaa-cross-account/` |
 | [Kiro CLI](https://kiro.dev/) | `.kiro/skills/` | `cp -r agent-skill .kiro/skills/mwaa-cross-account/` |
-| [Amazon Q CLI](https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line.html) | `.amazonq/skills/` | `cp -r agent-skill .amazonq/skills/mwaa-cross-account/` |
-| [CLI Agent Orchestrator](https://github.com/awslabs/cli-agent-orchestrator) | Managed via CLI | `cao skills add ./agent-skill` |
 | [Strands Agents SDK](https://strandsagents.com/docs/user-guide/concepts/plugins/skills/) | Via SDK plugin loader | Follow Strands skill plugin docs |
-| Other tools (Codex, Gemini CLI, Cursor, GitHub Copilot, etc.) | Varies | Check your tool's docs for skill/prompt loading conventions |
+| Other tools (Codex, Antigravity CLI, Cursor, GitHub Copilot, etc.) | Varies | Check your tool's docs for skill/prompt loading conventions |
 
-When using the [CLI Agent Orchestrator (CAO)](https://github.com/awslabs/cli-agent-orchestrator), skills are delivered to each provider automatically — Kiro CLI receives them as native `skill://` resources, while Claude Code, Codex, Gemini CLI, and others receive them via runtime prompt injection. See the [CAO skills documentation](https://github.com/awslabs/cli-agent-orchestrator?tab=readme-ov-file#skills) for details on managed skill delivery across providers.
 
 Then ask your AI coding assistant:
 
